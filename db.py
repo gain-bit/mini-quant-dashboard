@@ -9,6 +9,8 @@ SQLite 기반 가상 포트폴리오(페이퍼 트레이딩) 저장소
 - app_state         : 킬 스위치 알림 발동 여부 등 단순 상태 플래그 저장
 """
 
+from __future__ import annotations
+
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime

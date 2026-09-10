@@ -1,9 +1,12 @@
 """페이지 2: 포트폴리오 현황 및 분석 (Portfolio & Quant Analysis) — KIS Open API 실시간 시세 기반"""
 
+from __future__ import annotations
+
 import pandas as pd
 import streamlit as st
 
 import db
+import utils.risk as risk
 import utils.strategy_engine as strategy_engine
 import utils.telegram_bot as telegram_bot
 from config import (
@@ -34,6 +37,55 @@ def _telegram_test_button(key: str) -> None:
             st.warning(msg)
         else:
             st.error(f"텔레그램 전송에 실패했습니다: {msg}")
+
+
+# ------------------------------------------------------------------
+# 0) 시장 위험도 경보 (동적 자산배분 / 변동성 타겟팅)
+# ------------------------------------------------------------------
+_RISK_CARD_CLASS = {
+    "정상": "risk-alert-safe",
+    "주의": "risk-alert-caution",
+    "위험": "risk-alert-danger",
+}
+_RISK_LABEL = {
+    "정상": "정상",
+    "주의": "주의 · 고변동성",
+    "위험": "위험 · 하락장",
+}
+
+
+def _render_market_risk_alert() -> None:
+    st.subheader("시장 위험도 경보 시스템")
+    st.caption("KOSPI · S&P500(ETF 프록시) 20/60일 이동평균 및 20일 연환산 변동성 기반")
+
+    with st.spinner("시장 위험도를 분석하는 중..."):
+        alert = risk.compute_market_risk_alert()
+
+    overall = alert["overall_level"]
+    if overall is None:
+        st.info("시장 위험도를 판단할 데이터가 아직 충분하지 않습니다.")
+        return
+
+    css_class = _RISK_CARD_CLASS[overall]
+    label = _RISK_LABEL[overall]
+
+    detail_lines = []
+    for regime in (alert["kospi"], alert["sp500_proxy"]):
+        if not regime.get("available"):
+            continue
+        vol_text = f"{regime['volatility']*100:.1f}%" if regime.get("volatility") is not None else "-"
+        ma_short_text = f"{regime['ma_short']:,.1f}" if regime.get("ma_short") is not None else "-"
+        detail_lines.append(
+            f"{regime['name']}: {regime['level']} (20일 변동성 {vol_text}, 20일 이평 {ma_short_text})"
+        )
+
+    st.markdown(
+        f"""<div class='risk-alert-card {css_class}'>
+        [{label}] {alert['guidance']}<br>
+        <span class='source-tag' style='opacity:0.85;'>{" · ".join(detail_lines)}</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
 
 # ------------------------------------------------------------------
@@ -460,6 +512,8 @@ def _render_paper_trading():
 def render():
     st.title("Portfolio & Quant Analysis")
 
+    _render_market_risk_alert()
+    st.markdown("---")
     _render_screener()
     st.markdown("---")
     _render_paper_trading()

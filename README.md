@@ -3,6 +3,25 @@
 Streamlit 기반 미니 퀀트 대시보드 — 한국투자증권(KIS) Open API REST 실시간 시세 전용.
 FinanceDataReader, yfinance, pykrx, 목업(Mock) 데이터는 전혀 사용하지 않습니다.
 
+## 최근 버그 수정 (2026-09-10)
+
+1. **환율 조회 실패 수정** (`utils/naver_fx.py`) — 네이버 마켓인덱스 JSON API의 실제 응답이
+   최상위가 아니라 `exchangeInfo` 키 안에 중첩되어 있었고, 등락 방향도 문자열이 아니라
+   `{"code": "2", "text": "상승", "name": "RISING"}` 형태의 딕셔너리로 내려오는데 파서가
+   이를 반영하지 못해 조회가 항상 실패하고 있었다. 실제 오류 응답을 그대로 사용해 수정
+   후 재검증했다.
+2. **페이지 전환 시 스크롤 자동 리셋** (`app.py`) — 사이드바에서 다른 페이지로 이동하면
+   스크롤 위치가 유지되어 화면 중간부터 보이던 문제를 고쳤다. `st.session_state`로 이전
+   페이지를 기억해두었다가, 페이지가 실제로 바뀐 경우에만(30초 자동 새로고침 등 일반
+   재실행과는 구분) `streamlit.components.v1.html`로 스크롤을 최상단으로 이동시킨다.
+3. **Detail 페이지에 섹션별 최종 업데이트 날짜 표기** (`pages_impl/detail.py`) — 각 항목
+   제목 옆에 마지막으로 수정된 날짜가 함께 표시되어, 이후 기능이 추가·변경될 때마다
+   무엇이 언제 바뀌었는지 한눈에 추적할 수 있다.
+4. **올웨더 자산군 카드 정렬 버그 수정** (`pages_impl/market_overview.py`) — "전체" 탭에서
+   `st.columns()`를 카테고리 루프 바깥에서 한 번만 생성하고 카테고리 제목은 컬럼 밖에서
+   출력하다 보니, Streamlit이 제목들을 카드 그리드 전체 아래로 밀어버리는 렌더링 순서
+   문제가 있었다. 8대 섹터 섹션과 동일하게 카테고리마다 컬럼을 새로 생성하도록 고쳤다.
+
 ## 폴더 구조
 
 ```
@@ -11,13 +30,13 @@ mini_quant_dashboard/
 ├── config.py                     # 초기자금/킬스위치/섹터 유니버스/KIS tr_id 등 전역 설정
 ├── db.py                         # SQLite 기반 가상 포트폴리오 저장소
 ├── requirements.txt
-├── .gitignore                     # secrets.toml, 토큰 캐시, DB 파일 등을 커밋에서 제외
+├── .gitignore                     # secrets.toml, 토큰 캐시(.token_cache.json), DB 파일 등을 커밋에서 제외
 ├── .streamlit/
-│   ├── secrets.toml.example      # KIS 인증정보 설정 예시 (복사해서 secrets.toml로 사용)
-│   └── kis_token_cache.json       # (자동 생성됨) 발급된 토큰 캐시 — 커밋하지 말 것
+│   └── secrets.toml.example      # KIS/텔레그램 인증정보 설정 예시 (복사해서 secrets.toml로 사용)
+├── .token_cache.json               # (자동 생성됨, 프로젝트 루트) 발급된 KIS 토큰 캐시 — 커밋하지 말 것
 ├── pages_impl/
-│   ├── market_overview.py        # 페이지1: Market Overview — 시장 국면 신호등 + 8대 섹터 대표주
-│   ├── portfolio_analysis.py     # 페이지2: Portfolio & Quant Analysis — 스크리너 + 페이퍼 트레이딩/리스크
+│   ├── market_overview.py        # 페이지1: Market Overview — 시장 국면 신호등 + 8대 섹터 + 올웨더 자산군
+│   ├── portfolio_analysis.py     # 페이지2: Portfolio & Quant Analysis — 위험도 경보 + 스크리너 + 페이퍼 트레이딩
 │   └── detail.py                  # 페이지3: Detail — 사이트 목적/데이터 출처/갱신 주기 등 설명 페이지
 └── utils/
     ├── kis_api.py                 # KIS REST 클라이언트 (토큰 자동관리+파일캐시, 국내지수/종목 시세, 휴장일조회)
@@ -25,10 +44,14 @@ mini_quant_dashboard/
     ├── market_hours.py             # KST 기준 정규장 운영시간 판별 (월~금 09:00~16:00, 요일·시간만)
     ├── holiday.py                  # 한국거래소 휴장일 캘린더 조회 (KIS API 재사용, 하루 단위 캐싱)
     ├── strategy_engine.py          # 매크로(코스피 200일선)+퀀트(RSI/PBR/PER) 결합 매수 시그널 판단
-    ├── risk.py                     # 계좌 전체 킬 스위치 판단 (대시보드 전역 배너용)
+    ├── risk.py                     # 계좌 킬 스위치 + 시장 위험도 경보(이동평균/변동성 타겟팅) 판단
     ├── telegram_bot.py             # 텔레그램 봇 API 실시간 푸시 알림 (매수시그널/손절/킬스위치)
-    └── data_fetcher.py             # 캐싱 + Last-Known-Good 폴백을 포함한 상위 데이터 계층
+    └── data_fetcher.py             # 캐싱(ttl=30) + Last-Known-Good 폴백을 포함한 상위 데이터 계층
 ```
+
+**Python 3.9 호환성**: 모든 모듈 상단에 `from __future__ import annotations`를 추가해,
+`str | None` 같은 PEP 604 유니온 문법을 3.9에서도 안전하게 쓸 수 있도록 했다 (이 문법은
+3.10부터 네이티브 지원되며, future import 없이 3.9에서 그대로 실행하면 `TypeError`가 난다).
 
 ## 사전 준비: KIS API Key 발급
 
@@ -140,7 +163,7 @@ CHAT_ID = "알림을 받을 chat_id"
 
 2. **포지션별 자동 손절** (`pages_impl/portfolio_analysis.py`)
    - 보유 종목의 실시간 평가 수익률이 매수 시 설정한 손절 기준(-3% 또는 -5%)에 도달하거나
-     이를 초과해 하락하면, 화면이 새로고침될 때마다(장중에는 15초 주기) 자동으로 감지되어
+     이를 초과해 하락하면, 화면이 새로고침될 때마다(장중에는 30초 주기) 자동으로 감지되어
      해당 포지션을 즉시 가상 매도 처리하고 매도 이력을 DB에 기록한다.
    - 보유 종목 목록에는 각 종목의 수익률이 손절 기준에 얼마나 근접했는지 진행률 막대로
      표시되며, 근접도에 따라 안전/주의/위험 3단계 라벨이 함께 표시된다.
@@ -152,26 +175,54 @@ CHAT_ID = "알림을 받을 chat_id"
    - 킬 스위치 발동 중에는 페이퍼 트레이딩 화면의 매수 실행 버튼이 비활성화되어 신규 매수가
      완전히 차단된다.
 
+## 올웨더 포트폴리오 자산군 + 시장 위험도 경보 (동적 자산배분)
+
+1. **올웨더 포트폴리오 자산군** (`config.py`의 `ASSET_CLASS_ETFS`, `pages_impl/market_overview.py`)
+   - 레이 달리오의 올웨더(All-Weather) 포트폴리오 개념을 참고해 주식/채권/원자재/현금·방어
+     4개 자산군의 국내 상장 ETF를 추가했다 (KODEX 200, TIGER 미국S&P500, KODEX 국고채10년,
+     TIGER 미국채10년선물, KODEX 골드선물(H), TIGER 원유선물Enhanced(H), KODEX KOFR금리액티브,
+     KODEX 200선물인버스2X).
+   - Market Overview 페이지 하단에 `st.tabs()`로 전체/주식/채권/원자재/현금·방어 필터를 제공하며,
+     기존 8대 섹터 카드와 동일한 카드형 레이아웃 렌더러(`_render_stock_card_html`)를 공유해
+     모바일 UI가 깨지지 않는다.
+   - ⚠️ ETF 코드, 특히 KOFR금리액티브 계열은 유사 상품이 많아 실제 사용 전 한국거래소
+     정보데이터시스템 등에서 최신 코드로 재확인을 권장한다.
+
+2. **시장 위험도 경보 / 변동성 타겟팅** (`utils/risk.py`, `pages_impl/portfolio_analysis.py`)
+   - 파생상품(풋옵션) 없이 인버스 ETF·현금 비중 조절만으로 방어하는 동적 리스크 관리 개념을 구현했다.
+   - 코스피 지수와, 실제 해외지수 대신 국내 상장 ETF 'TIGER 미국S&P500'(원화 기준)을 S&P500의
+     프록시로 사용해 각각 20일/60일 이동평균 추세와 20일 연환산 변동성을 분석한다.
+   - 판정 기준: 20일선 아래이면서 20일선<60일선(데드크로스)이거나 변동성 ≥30%면 "위험",
+     20일선 아래이거나 변동성 ≥20%면 "주의", 그 외는 "정상". 코스피와 S&P500 프록시 중 더
+     위험한 쪽을 전체 경보 단계로 채택한다.
+   - 단계별 권장 문구: 정상 → "현금/인버스 비중 0%", 주의 → "현금 또는 인버스 ETF 비중
+     20~30% 확보 추천", 위험 → "KODEX 200선물인버스2X 비중 확대 권장".
+   - 상승/하락/고변동성/데이터부족/데이터없음 5가지 시나리오를 순수 함수 단위 테스트로 직접
+     실행해 검증했다. 이동평균 기간과 변동성 임계값(`config.py`)은 조정 가능한 휴리스틱이다.
+
 ## 안정성 방어 체계 구현 내역
 
 1. **토큰 자동 관리** (`utils/kis_api.py`)
    - Access Token은 프로세스 메모리(전역 캐시)에 저장하며, 만료 5분 전 자동 갱신
    - API 호출 중 401 응답을 받으면 토큰을 강제 재발급 후 1회 자동 재시도
-   - 추가로, 발급된 토큰을 `.streamlit/kis_token_cache.json` 파일에도 백업한다. 개발 중
+   - 추가로, 발급된 토큰을 프로젝트 루트의 `.token_cache.json` 파일에도 백업한다. 개발 중
      코드 수정으로 Streamlit 프로세스가 재시작되어 메모리 캐시가 초기화되더라도, 파일에
      남아있는 토큰이 아직 유효하면(만료 전이고 APP_KEY/모의·실전 모드가 동일하면) 그대로
      재사용한다. 이는 KIS의 "토큰 재발급 1분당 1회" 제한(에러코드 `EGW00133`,
-     `접근토큰 발급 잠시 후 다시 시도하세요`)에 걸리는 것을 방지하기 위함이다.
+     `접근토큰 발급 잠시 후 다시 시도하세요`)에 걸리는 것을 방지하고, 앱을 켤 때마다
+     매번 재발급하면서 발생하던 알림(카카오톡 등) 폭주를 줄이기 위함이다.
      이 캐시 파일에는 발급된 토큰(민감 정보)이 담기므로 `.gitignore`에 포함되어 있으며,
      `secrets.toml`의 APP_KEY를 바꾸거나 모의/실전 모드를 전환하면 자동으로 무시되고
      새로 발급받는다.
 
 2. **Rate Limit / IP 차단 방지**
-   - 모든 시세 조회 함수(`utils/data_fetcher.py`)에 `@st.cache_data(ttl=15)` 적용 → 15초간 캐시된 값 재사용
-   - 히스토리(200일 이평/RSI용) 조회는 `ttl=60`으로 더 길게 캐싱
+   - 모든 시세 조회 함수(`utils/data_fetcher.py`)에 `@st.cache_data(ttl=30)` 적용 → 30초간 캐시된 값 재사용
+     (데이터 수집과 UI 렌더링의 병목을 분리하기 위해 기존 15초에서 상향)
+   - 히스토리(200일 이평/RSI/60일 이평용) 조회는 `ttl=120`으로 더 길게 캐싱
    - 실제 KIS 호출이 일어나는 지점마다 `time.sleep(0.2)`를 적용해 연속 호출 시 과도한 트래픽 방지
      (기존 0.05초에서 상향 조정 — 초당 거래건수 초과 오류 EGW00201 발생 빈도를 낮추기 위함)
-   - 여러 종목을 순회 조회하는 화면(8대 섹터, 스크리너)은 캐시 미스가 난 종목만 실제로 호출하므로, 최초 로딩 이후에는 API 호출이 거의 발생하지 않음
+   - 여러 종목을 순회 조회하는 화면(8대 섹터, 스크리너, 올웨더 자산군)은 캐시 미스가 난 종목만
+     실제로 호출하므로, 최초 로딩 이후에는 API 호출이 거의 발생하지 않음
    - `utils/kis_api.py`의 `_request()`는 응답에서 `msg_cd == "EGW00201"`("초당 거래건수를 초과하였습니다")을
      감지하면 1.0초 대기 후 자동으로 재시도하며, 최대 2회까지 반복한다. 이 오류는 KIS가 HTTP 200이 아닌
      상태코드(주로 500)로 내려보내는 경우가 있어, HTTP 상태코드를 판정하기 전에 먼저 응답 바디에서
@@ -237,19 +288,20 @@ APP_KEY 1개당 토큰 발급을 1분에 1회로 제한하기 때문에 발생�
 - 코드 수정 직후 Streamlit이 짧은 시간에 여러 번 자동 재시작되어, 재시작마다 메모리 캐시가
   초기화되고 매번 새 토큰을 요청한 경우
 
-이번 업데이트로 발급된 토큰을 `.streamlit/kis_token_cache.json`에도 저장하도록 개선했으므로,
+이번 업데이트로 발급된 토큰을 프로젝트 루트의 `.token_cache.json`에도 저장하도록 개선했으므로,
 프로세스가 재시작되어도 아직 유효한 토큰이 있으면 재발급 없이 재사용됩니다. 그래도 이
 오류가 발생한다면 실행 중인 다른 Streamlit 프로세스가 있는지 확인해 종료하고, 1분 정도
 기다린 후 다시 실행하세요.
 
 ## 커스터마이징 포인트
 
-- `config.py`의 `SECTOR_STOCKS`, `INITIAL_CAPITAL`, `KILL_SWITCH_THRESHOLD`,
-  `DEFAULT_STOP_LOSS_LEVELS`, `KIS_REQUEST_DELAY_SEC`, `KIS_QUOTE_CACHE_TTL_SEC` 값만 바꾸면
-  유니버스/파라미터/캐시 정책 조정이 가능합니다.
-- 텔레그램 알림 버튼은 UI 데모(`st.toast`)만 구현되어 있습니다. 실제 발송이 필요하면
-  `pages_impl/portfolio_analysis.py`의 해당 부분을 Telegram Bot API 호출로 교체하고,
-  봇 토큰은 `st.secrets`에 별도 섹션(`[telegram]`)으로 보관하는 것을 권장합니다.
+- `config.py`의 `SECTOR_STOCKS`, `ASSET_CLASS_ETFS`, `INITIAL_CAPITAL`, `KILL_SWITCH_THRESHOLD`,
+  `DEFAULT_STOP_LOSS_LEVELS`, `KIS_REQUEST_DELAY_SEC`, `KIS_QUOTE_CACHE_TTL_SEC`,
+  `AUTOREFRESH_INTERVAL_SEC`, `MA_SHORT_DAYS`/`MA_LONG_DAYS`, `VOL_CAUTION_THRESHOLD`/
+  `VOL_DANGER_THRESHOLD` 값만 바꾸면 유니버스/파라미터/캐시/새로고침 주기/위험도 경보
+  임계값 조정이 가능합니다.
+- 텔레그램 알림은 `utils/telegram_bot.py`를 통해 실제 텔레그램 봇 API로 발송됩니다
+  (자세한 설정 방법은 위 "텔레그램 실시간 푸시 알림" 섹션 참고).
 
 ## 참고 / 제한 사항
 

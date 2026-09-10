@@ -5,7 +5,10 @@ Mini Quant Dashboard - 메인 엔트리포인트
     streamlit run app.py
 """
 
+from __future__ import annotations
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 import db
 import utils.holiday as holiday
@@ -172,6 +175,29 @@ st.markdown(
             opacity: 0.9;
         }
 
+        .risk-alert-card {
+            border-radius: 14px;
+            padding: 16px 20px;
+            margin-bottom: 14px;
+            font-weight: 700;
+            line-height: 1.6;
+        }
+        .risk-alert-safe {
+            background-color: rgba(34,197,94,0.10);
+            border: 1px solid rgba(34,197,94,0.4);
+            color: #16a34a;
+        }
+        .risk-alert-caution {
+            background-color: rgba(234,179,8,0.12);
+            border: 1px solid rgba(234,179,8,0.45);
+            color: #b45309;
+        }
+        .risk-alert-danger {
+            background-color: rgba(239,68,68,0.12);
+            border: 1px solid rgba(239,68,68,0.45);
+            color: #dc2626;
+        }
+
         /* 카드형 레이아웃(st.container(border=True)) 간 세로 여백을 정리 */
         div[data-testid="stVerticalBlockBorderWrapper"] {
             margin-bottom: 10px;
@@ -213,6 +239,35 @@ page = st.sidebar.radio(
     ["📈 지수 및 시장 현황", "💼 포트폴리오 & 퀀트 분석", "Detail"],
     label_visibility="collapsed",
 )
+
+# --------------------------------------------------------------
+# 페이지 전환 시 스크롤을 최상단으로 리셋한다.
+# 30초 자동 새로고침 등 페이지가 안 바뀐 일반 재실행에서는 스크롤을 건드리지 않도록,
+# 세션에 기억해둔 이전 페이지와 다를 때만(=사용자가 실제로 메뉴를 클릭했을 때만) 실행한다.
+# ⚠️ Streamlit이 각 페이지를 렌더링하는 실제 DOM 컨테이너의 클래스명은 버전에 따라
+#    달라질 수 있어, 메인 컨테이너를 여러 후보 선택자로 시도하고 최후에는 전체 창을
+#    스크롤하도록 방어적으로 작성했다.
+# --------------------------------------------------------------
+if st.session_state.get("_current_page") != page:
+    st.session_state["_current_page"] = page
+    components.html(
+        """
+        <script>
+            (function() {
+                var target = window.parent.document;
+                var container = target.querySelector('section.main')
+                    || target.querySelector('[data-testid="stAppViewContainer"]')
+                    || target.querySelector('[data-testid="stMain"]');
+                if (container) {
+                    container.scrollTo(0, 0);
+                }
+                window.parent.scrollTo(0, 0);
+            })();
+        </script>
+        """,
+        height=0,
+    )
+
 st.sidebar.markdown("---")
 if _market_open:
     st.sidebar.caption(

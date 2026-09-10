@@ -52,23 +52,38 @@ def _fetch_via_json() -> dict:
     resp.raise_for_status()
     data = resp.json()
 
+    # 실제 응답은 필드가 최상위가 아니라 "exchangeInfo" 키 안에 중첩되어 내려온다.
+    # (예: {"exchangeInfo": {"closePrice": "1,345.30", "fluctuationsType": {...}, ...}})
+    # exchangeInfo가 없는 스키마 변형도 대비해 없으면 최상위 데이터를 그대로 사용한다.
+    info = data.get("exchangeInfo", data) if isinstance(data, dict) else {}
+    if not isinstance(info, dict):
+        info = {}
+
     # 네이버 응답 스키마는 버전에 따라 필드명이 조금씩 다를 수 있어 후보 키를 순서대로 탐색한다.
-    raw_price = _first_present(data, ["closePrice", "closePriceRaw", "price", "nv"])
+    raw_price = _first_present(info, ["closePrice", "closePriceRaw", "price", "nv"])
     if raw_price is None:
         raise NaverFXError(f"JSON 응답에서 가격 필드를 찾을 수 없습니다: {data}")
     price = _to_float(raw_price)
 
     raw_change_pct = _first_present(
-        data, ["fluctuationsRatio", "changeRate", "fluctuationRatio", "cr"]
+        info, ["fluctuationsRatio", "changeRate", "fluctuationRatio", "cr"]
     )
     change_pct = _to_float(raw_change_pct) if raw_change_pct is not None else 0.0
 
-    # 하락 방향을 부호가 아닌 별도 필드(fluctuationsType 등)로 주는 스키마를 대비한다.
-    direction = str(
-        data.get("fluctuationsType") or data.get("changeType") or data.get("status") or ""
-    ).upper()
-    if direction in ("FALL", "DOWN", "2", "DEC") and change_pct > 0:
-        change_pct = -change_pct
+    # 등락 방향은 문자열이 아니라 {"code": "2", "text": "상승", "name": "RISING"} 형태의
+    # 딕셔너리(fluctuationsType)로 내려온다. "상승/RISING"이면 양수, "하락/FALLING"이면 음수로
+    # 부호를 맞춘다. 코드 값("1"/"2" 등)은 스키마 버전에 따라 바뀔 수 있어 text/name으로 판단한다.
+    fluct_type = info.get("fluctuationsType")
+    if isinstance(fluct_type, dict):
+        direction = str(fluct_type.get("name") or fluct_type.get("text") or "").upper()
+    else:
+        direction = str(fluct_type or "").upper()
+
+    if direction in ("FALLING", "DOWN", "하락", "DEC", "DECLINING"):
+        change_pct = -abs(change_pct)
+    elif direction in ("RISING", "UP", "상승", "INC", "INCREASING"):
+        change_pct = abs(change_pct)
+    # 방향을 판단할 수 없으면 원본 부호(대개 절대값)를 그대로 둔다.
 
     return {"price": price, "change_pct": change_pct}
 

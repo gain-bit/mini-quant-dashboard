@@ -24,6 +24,7 @@
 ```
 .streamlit/secrets.toml
 .streamlit/kis_token_cache.json
+.token_cache.json
 *.db
 *.sqlite
 *.sqlite3
